@@ -2,7 +2,7 @@ package com.github.oskin1.proxy
 
 import java.sql.Timestamp
 
-import cats.effect.IO
+import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import com.github.oskin1.proxy.models.{CandlestickItem, Trade}
 
@@ -14,6 +14,7 @@ final class TradesPersistence(
   completeEpochTrades: Map[Long, IndexedSeq[Trade]],
   incompleteEpochTrades: IndexedSeq[Trade],
   currentEpochOpt: Option[Long],
+  epochLengthMillis: Long,
   keepEpochs: Int
 ) {
 
@@ -29,9 +30,8 @@ final class TradesPersistence(
             case (ticker, trades) =>
               val open = trades.head.price
               val close = trades.last.price
-              val sortedPrices = trades.map(_.price).sorted
-              val low = sortedPrices.head
-              val high = sortedPrices.last
+              val low = trades.minBy(_.price).price
+              val high = trades.maxBy(_.price).price
               val volume = trades.map(_.volume).sum
               val ts = new Timestamp(epoch).toString
               models.CandlestickItem(ticker, ts, open, high, low, close, volume)
@@ -46,24 +46,41 @@ final class TradesPersistence(
     val (updatedComplete, updatedIncomplete) =
       currentEpochOpt match {
         case Some(currentEpoch) if currentEpoch != epoch =>
-          val minEpoch = epoch - (keepEpochs * 60 * 1000)
+          val minEpoch = epoch - (keepEpochs * epochLengthMillis)
           completeEpochTrades
             .filter { case (epoch, _) => epoch >= minEpoch }
             .updated(currentEpoch, incompleteEpochTrades) -> IndexedSeq(trade)
         case _ =>
           completeEpochTrades -> (incompleteEpochTrades :+ trade)
       }
-    new TradesPersistence(updatedComplete, updatedIncomplete, Some(epoch), keepEpochs)
+    new TradesPersistence(
+      updatedComplete,
+      updatedIncomplete,
+      Some(epoch),
+      epochLengthMillis,
+      keepEpochs
+    )
   }
 
   private def epochOf(trade: Trade): Long =
-    trade.timestamp - (trade.timestamp % (60 * 1000))
+    trade.timestamp - (trade.timestamp % epochLengthMillis)
 }
 
 object TradesPersistence {
 
-  def empty[F[_]](keepEpochs: Int): IO[Ref[IO, TradesPersistence]] =
-    Ref.of[IO, TradesPersistence](
-      new TradesPersistence(TreeMap.empty, IndexedSeq.empty, None, keepEpochs)
+  /** Create a new reference to a [[TradesPersistence]] suspended in `F[_]`.
+    */
+  def empty[F[_]: Sync](
+    epochLengthMillis: Long,
+    keepEpochs: Int
+  ): F[Ref[F, TradesPersistence]] =
+    Ref.of[F, TradesPersistence](
+      new TradesPersistence(
+        TreeMap.empty,
+        IndexedSeq.empty,
+        None,
+        epochLengthMillis,
+        keepEpochs
+      )
     )
 }

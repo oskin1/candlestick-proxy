@@ -19,7 +19,7 @@ object App extends IOApp {
         Blocker[IO].use { blocker =>
           SocketGroup[IO](blocker).use { socketGroup =>
             TradesPersistence
-              .empty(settings.keepLastEpochs)
+              .empty[IO](settings.epochLength.toMillis, settings.keepLastEpochs)
               .flatMap { ref =>
                 TradesListener
                   .run(ref, socketGroup, settings)
