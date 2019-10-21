@@ -18,6 +18,8 @@ import scala.concurrent.duration._
   */
 object Server {
 
+  private val connectionTimeout = 10.seconds
+
   def run[F[_]: Concurrent: ContextShift: Timer: Logger](
     tradesPersistenceRef: Ref[F, TradesPersistence],
     socketGroup: SocketGroup,
@@ -72,5 +74,5 @@ object Server {
       .emit(msg)
       .through(StreamEncoder.many(msgEncoder).toPipe)
       .flatMap(bits => Stream.chunk(Chunk.byteVector(bits.bytes)))
-      .through(socket.writes(Some(10.seconds)))
+      .through(socket.writes(Some(connectionTimeout)))
 }
