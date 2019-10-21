@@ -46,12 +46,13 @@ object TradesListener {
     Stream.eval(Logger[F].info(s"Connecting to $address")) >>
     Stream.resource(socketGroup.client[F](address))
 
-  /** Repeatedly reads chunks of bytes of specified size `maxChunkSize` from a socket.
+  /** Repeatedly reads chunks of bytes of specified size `maxChunkSize` from a socket
+    * decoding them into trades.
     */
   private def repeatRead[F[_]: Concurrent](
     socket: Socket[F],
     maxChunkSize: Int
-  )(implicit eventDecoder: Decoder[Trade]) =
+  )(implicit eventDecoder: Decoder[Trade]): Stream[F, Trade] =
     Stream
       .repeatEval(socket.read(maxBytes = maxChunkSize))
       .flatMap {
